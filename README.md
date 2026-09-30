@@ -42,7 +42,7 @@ SESSION_CREATION_LIMIT_PER_MINUTE="60"
 
 部署平台的 `NODE_ENV=production` 与应用的 `APP_ENV=demo` 并不冲突。只有把 `APP_ENV` 明确设为 `production` 时，配置校验才会拒绝演示解锁和公开 Demo。公开演示会话 1 天有效，普通访客数据在最后一次写入后最多保留 7 天；`vercel.json` 配置的每日任务会调用受 `CRON_SECRET` 保护的清理接口。
 
-完整的 Vercel + Neon 配置、迁移、seed、验收和回滚清单见 [演示环境上线准备清单](docs/演示环境上线准备清单.md)。本仓库只做到可部署状态，不伪造或执行公网发布。
+公开演示已部署至 [health-ochre-one.vercel.app](https://health-ochre-one.vercel.app/)；完整的 Vercel + Neon 配置、迁移、seed、验收和回滚清单见 [演示环境上线准备清单](docs/演示环境上线准备清单.md)。挑战提交材料见 [20260930【mengj】全栈挑战](docs/20260930【mengj】全栈挑战.md)。
 
 ## 页面与主流程
 
