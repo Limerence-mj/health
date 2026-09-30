@@ -20,7 +20,7 @@ export default defineConfig({
   webServer: process.env.PLAYWRIGHT_BASE_URL ? undefined : {
     command: "npm run build && npm run start -- --hostname 127.0.0.1 --port 3100",
     url: "http://127.0.0.1:3100/api/health",
-    env: { APP_ORIGIN: "http://127.0.0.1:3100" },
+    env: { ...process.env, APP_ORIGIN: "http://127.0.0.1:3100" },
     reuseExistingServer: !process.env.CI,
     timeout: 120_000
   }
