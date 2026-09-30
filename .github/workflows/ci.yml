@@ -1,0 +1,45 @@
+name: verify
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: health
+          POSTGRES_PASSWORD: health_ci_only
+          POSTGRES_DB: health_test
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U health -d health_test"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://health:health_ci_only@127.0.0.1:55432/health_test?schema=public
+      DIRECT_URL: postgresql://health:health_ci_only@127.0.0.1:55432/health_test?schema=public
+      TEST_DATABASE_URL: postgresql://health:health_ci_only@127.0.0.1:55432/health_test?schema=public
+      APP_ORIGIN: http://127.0.0.1:3100
+      APP_ENV: test
+      MOCK_PAYMENTS_ENABLED: "true"
+      DEMO_MODE: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run db:generate
+      - run: npm run db:migrate
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test
+      - run: npm run build

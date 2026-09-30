@@ -1,0 +1,52 @@
+{
+  "name": "health-assessment-funnel",
+  "version": "0.1.0",
+  "private": true,
+  "description": "健康测评分步保存、报告权限与模拟支付演示",
+  "engines": {
+    "node": ">=20.9.0"
+  },
+  "scripts": {
+    "dev": "next dev --hostname 127.0.0.1 --port 3100",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate deploy",
+    "db:seed": "tsx --env-file=.env prisma/seed.ts",
+    "demo:refresh": "tsx --env-file=.env prisma/seed.ts",
+    "data:purge": "tsx --env-file=.env scripts/purge-expired.ts",
+    "test:unit": "vitest run tests/unit",
+    "test:integration": "node --env-file=.env node_modules/vitest/vitest.mjs run tests/integration --no-file-parallelism",
+    "test:e2e": "NO_PROXY=127.0.0.1,localhost no_proxy=127.0.0.1,localhost playwright test",
+    "test": "npm run test:unit && npm run test:integration && npm run test:e2e",
+    "verify": "npm run lint && npm run typecheck && npm run test && npm run build"
+  },
+  "dependencies": {
+    "@fontsource-variable/noto-sans-sc": "^5.3.0",
+    "@prisma/client": "6.19.2",
+    "@tanstack/react-query": "5.104.0",
+    "next": "16.3.6",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "react-hook-form": "7.89.0",
+    "recharts": "3.10.1",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "22.19.15",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "eslint": "9.39.2",
+    "eslint-config-next": "16.3.6",
+    "prisma": "6.19.2",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3",
+    "vitest": "4.0.18"
+  },
+  "prisma": {
+    "seed": "tsx --env-file=.env prisma/seed.ts"
+  }
+}

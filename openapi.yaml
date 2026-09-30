@@ -1,0 +1,669 @@
+openapi: 3.1.0
+info:
+  title: WellPath 健康测评 API
+  version: 0.3.0
+  description: >-
+    匿名健康测评、结果权限和模拟支付接口。所有写请求必须同源且使用
+    application/json；标注 Idempotency-Key 的操作支持业务回放。
+servers:
+  - url: http://127.0.0.1:3000
+tags:
+  - name: Session
+  - name: Assessment
+  - name: Report
+  - name: Payment
+  - name: Demo
+  - name: Lifecycle
+paths:
+  /api/health:
+    get:
+      tags: [Lifecycle]
+      summary: 进程存活检查
+      responses:
+        "200":
+          description: 服务存活
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, version]
+                properties:
+                  status: { const: ok }
+                  version: { type: string }
+  /api/ready:
+    get:
+      tags: [Lifecycle]
+      summary: 数据库就绪检查
+      responses:
+        "200": { description: 数据库可用 }
+        "503": { description: 数据库不可用 }
+  /api/v1/sessions:
+    post:
+      tags: [Session]
+      summary: 创建或复用匿名会话
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+      responses:
+        "200":
+          description: 复用有效会话
+          headers:
+            Set-Cookie: { schema: { type: string } }
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/SessionEnvelope" } }
+        "201":
+          description: 新建会话、空测评和未激活权益
+          headers:
+            Set-Cookie: { schema: { type: string } }
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/SessionEnvelope" } }
+        "429":
+          description: 共享会话创建容量已耗尽
+          headers:
+            Retry-After: { schema: { type: integer, minimum: 1 } }
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/session:
+    get:
+      tags: [Session]
+      summary: 读取当前会话并同步 Cookie 到期时间
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: 当前会话
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/SessionEnvelope" } }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/assessments:
+    post:
+      tags: [Assessment]
+      summary: 创建草稿或返回已有草稿
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                copyFromAssessmentId: { type: string, format: uuid }
+      responses:
+        "200": { description: 返回已有草稿, content: { application/json: { schema: { $ref: "#/components/schemas/AssessmentEnvelope" } } } }
+        "201": { description: 创建草稿, content: { application/json: { schema: { $ref: "#/components/schemas/AssessmentEnvelope" } } } }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/assessments/current:
+    get:
+      tags: [Assessment]
+      summary: 读取当前草稿，否则读取最近完成测评
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200": { description: 当前测评, content: { application/json: { schema: { $ref: "#/components/schemas/AssessmentEnvelope" } } } }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/assessments/{assessmentId}:
+    get:
+      tags: [Assessment]
+      summary: 读取本人测评答案和进度
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/AssessmentId" }]
+      responses:
+        "200": { description: 测评, content: { application/json: { schema: { $ref: "#/components/schemas/AssessmentEnvelope" } } } }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/assessments/{assessmentId}/steps/{stepKey}:
+    put:
+      tags: [Assessment]
+      summary: 保存单个主题阶段的增量答案
+      description: 请求体 data 必须与 stepKey 对应，未知字段被拒绝。
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/AssessmentId"
+        - name: stepKey
+          in: path
+          required: true
+          schema: { type: string, enum: [profile, activity, lifestyle, nutrition, metrics] }
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: "#/components/schemas/ProfileStepRequest"
+                - $ref: "#/components/schemas/ActivityStepRequest"
+                - $ref: "#/components/schemas/LifestyleStepRequest"
+                - $ref: "#/components/schemas/NutritionStepRequest"
+                - $ref: "#/components/schemas/MetricsStepRequest"
+      responses:
+        "200": { description: 保存后的 revision、答案、进度和适用性 }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/assessments/{assessmentId}/submit:
+    post:
+      tags: [Assessment]
+      summary: 提交测评并生成不可变结果
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/AssessmentId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expectedRevision]
+              properties:
+                expectedRevision: { type: integer, minimum: 0 }
+      responses:
+        "200":
+          description: 已完成的结果定位
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [assessmentId, resultId, status, revision]
+                        properties:
+                          assessmentId: { type: string, format: uuid }
+                          resultId: { type: string, format: uuid }
+                          status: { const: COMPLETED }
+                          revision: { type: integer }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/assessments/{assessmentId}/result:
+    get:
+      tags: [Report]
+      summary: 按当前权益返回 PREVIEW 或 FULL 白名单报告
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/AssessmentId" }]
+      responses:
+        "200":
+          description: 报告
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        oneOf:
+                          - $ref: "#/components/schemas/PreviewReport"
+                          - $ref: "#/components/schemas/FullReport"
+        default: { $ref: "#/components/responses/Error" }
+  /pay:
+    post:
+      tags: [Payment]
+      summary: 处理模拟成功事件并激活 30 天权益
+      description: 不收款、不接收卡号；相同 eventId 不会重复激活或延长期限。
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [assessmentId, eventId, planCode]
+              properties:
+                assessmentId: { type: string, format: uuid }
+                eventId: { type: string, format: uuid }
+                planCode: { const: DEMO_30D }
+      responses:
+        "200":
+          description: 激活或回放结果
+          headers:
+            Idempotency-Replayed: { schema: { type: string, enum: ["true"] } }
+            Payment-Event-Replayed: { schema: { type: string, enum: ["true"] } }
+            Set-Cookie: { schema: { type: string } }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [paymentId, eventId, assessmentId, outcome, simulated, subscription, sessionExpiresAt]
+                        properties:
+                          paymentId: { type: string, format: uuid }
+                          eventId: { type: string, format: uuid }
+                          assessmentId: { type: string, format: uuid }
+                          outcome: { type: string, enum: [ACTIVATED, ALREADY_ACTIVE] }
+                          simulated: { const: true }
+                          subscription: { $ref: "#/components/schemas/Subscription" }
+                          sessionExpiresAt: { type: string, format: date-time }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/demo/paid:
+    get:
+      tags: [Demo]
+      summary: 读取固定合成数据报告
+      description: 只接受 view，不设置或覆盖个人 Cookie。
+      parameters:
+        - name: view
+          in: query
+          schema: { type: string, enum: [preview, full], default: full }
+      responses:
+        "200": { description: 固定报告 }
+        default: { $ref: "#/components/responses/Error" }
+  /api/v1/me:
+    delete:
+      tags: [Lifecycle]
+      summary: 删除当前匿名用户的全部数据
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [confirmation]
+              properties:
+                confirmation: { const: DELETE_MY_DATA }
+      responses:
+        "204":
+          description: 当前用户及全部关联数据已删除，Cookie 已清除
+          headers:
+            Set-Cookie: { schema: { type: string } }
+        default: { $ref: "#/components/responses/Error" }
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: health_session
+    bearerAuth:
+      type: http
+      scheme: bearer
+  parameters:
+    AssessmentId:
+      name: assessmentId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, format: uuid }
+  responses:
+    Error:
+      description: 标准错误
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+  schemas:
+    Meta:
+      type: object
+      required: [requestId]
+      properties:
+        requestId: { type: string, format: uuid }
+    SuccessEnvelope:
+      type: object
+      required: [data, meta]
+      properties:
+        data: {}
+        meta: { $ref: "#/components/schemas/Meta" }
+    ErrorEnvelope:
+      type: object
+      required: [error, meta]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            fields: { type: object, additionalProperties: { type: string } }
+            details: { type: object, additionalProperties: true }
+        meta: { $ref: "#/components/schemas/Meta" }
+    Subscription:
+      type: object
+      required: [effectiveStatus, startsAt, expiresAt]
+      properties:
+        effectiveStatus: { type: string, enum: [INACTIVE, ACTIVE, EXPIRED] }
+        startsAt: { type: [string, "null"], format: date-time }
+        expiresAt: { type: [string, "null"], format: date-time }
+    Session:
+      type: object
+      required: [sessionId, expiresAt, currentAssessmentId, nextStep, nextRoute, consent, subscription, capabilities]
+      properties:
+        sessionId: { type: string, format: uuid }
+        expiresAt: { type: string, format: date-time }
+        currentAssessmentId: { type: [string, "null"], format: uuid }
+        nextStep: { type: [string, "null"], enum: [profile, activity, lifestyle, nutrition, metrics, null] }
+        nextRoute: { type: [string, "null"] }
+        consent:
+          type: object
+          required: [requiredVersion, acceptedVersion, acceptedAt, accepted]
+          properties:
+            requiredVersion: { type: string }
+            acceptedVersion: { type: [string, "null"] }
+            acceptedAt: { type: [string, "null"], format: date-time }
+            accepted: { type: boolean }
+        subscription: { $ref: "#/components/schemas/Subscription" }
+        capabilities:
+          type: object
+          required: [mockPaymentsEnabled, publicDemoEnabled]
+          properties:
+            mockPaymentsEnabled: { type: boolean }
+            publicDemoEnabled: { type: boolean }
+    SessionEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data: { $ref: "#/components/schemas/Session" }
+    Assessment:
+      type: object
+      required: [assessmentId, sourceAssessmentId, status, revision, answers, questionnaireAnswers, scope, progress, eligibility]
+      properties:
+        assessmentId: { type: string, format: uuid }
+        sourceAssessmentId: { type: [string, "null"], format: uuid }
+        status: { type: string, enum: [DRAFT, COMPLETED] }
+        revision: { type: integer, minimum: 0 }
+        answers:
+          type: object
+          properties:
+            age: { type: [integer, "null"] }
+            sex: { type: [string, "null"], enum: [MALE, FEMALE, null] }
+            goal: { type: [string, "null"], enum: [LOSE_WEIGHT, MAINTAIN, GAIN_WEIGHT, null] }
+            heightCm: { type: [number, "null"] }
+            weightKg: { type: [number, "null"] }
+            targetWeightKg: { type: [number, "null"] }
+            activityLevel: { type: [string, "null"], enum: [SEDENTARY, LIGHT, MODERATE, HIGH, null] }
+        questionnaireAnswers:
+          type: object
+          description: 五个主题阶段已保存的白名单答案；每次保存以字段为单位合并。
+          additionalProperties: false
+          properties:
+            profile: { type: object, additionalProperties: true }
+            activity: { type: object, additionalProperties: true }
+            lifestyle: { type: object, additionalProperties: true }
+            nutrition: { type: object, additionalProperties: true }
+            metrics: { type: object, additionalProperties: true }
+        scope: { type: object, additionalProperties: true }
+        progress:
+          type: object
+          required: [completedSteps, invalidatedSteps, percent, nextStep, canSubmit]
+          properties:
+            completedSteps: { type: array, items: { type: string } }
+            invalidatedSteps: { type: array, items: { type: string } }
+            percent: { type: integer, enum: [0, 20, 40, 60, 80, 100] }
+            nextStep: { type: [string, "null"], enum: [profile, activity, lifestyle, nutrition, metrics, null] }
+            canSubmit: { type: boolean }
+        eligibility: { type: object, additionalProperties: true }
+    AssessmentEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data: { $ref: "#/components/schemas/Assessment" }
+    ProfileStepRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedRevision, data]
+      properties:
+        expectedRevision: { type: integer, minimum: 0 }
+        data:
+          type: object
+          additionalProperties: false
+          minProperties: 1
+          properties:
+            healthDataConsent: { const: true }
+            consentVersion: { const: health-v2 }
+            modelScopeConfirmed: { const: true }
+            scopeVersion: { const: wellness-scope-v2 }
+            ageRange: { type: string, enum: [18_29, 30_39, 40_49, 50_PLUS] }
+            pilatesExperience: { type: string, enum: [YES, NO] }
+            goal: { type: string, enum: [LOSE_WEIGHT, MAINTAIN, GAIN_WEIGHT] }
+            secondaryGoals:
+              type: array
+              minItems: 1
+              maxItems: 12
+              description: NONE 不得与其他选项同时提交。
+              items: { type: string, enum: [STRENGTH, POSTURE, STRESS, FLEXIBILITY, NONE] }
+            bodyBuild: { type: string, enum: [SLIM, MID, PLUS, LARGE] }
+            dreamBody: { type: string, enum: [LEAN, TONED, CURVY, BALANCED] }
+            weightTendency: { type: string, enum: [GAIN_FAST, CHANGE_EASILY, GAIN_HARD] }
+            bestShapeTiming: { type: string, enum: [UNDER_YEAR, ONE_TWO_YEARS, OVER_THREE_YEARS, NEVER] }
+    ActivityStepRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedRevision, data]
+      properties:
+        expectedRevision: { type: integer, minimum: 0 }
+        data:
+          type: object
+          additionalProperties: false
+          minProperties: 1
+          properties:
+            flexibility: { type: string, enum: [FLEXIBLE, STARTING, LIMITED, UNSURE] }
+            exerciseFrequency: { type: string, enum: [ALMOST_DAILY, SEVERAL_WEEKLY, SEVERAL_MONTHLY, NEVER] }
+            targetZones:
+              type: array
+              minItems: 1
+              maxItems: 12
+              items: { type: string, enum: [CORE, LEGS, GLUTES, CHEST, ARMS, BACK] }
+            stairsBreath: { type: string, enum: [VERY_BREATHLESS, SLIGHTLY, ONE_FLIGHT, FEW_FLIGHTS] }
+            sensitivities:
+              type: array
+              minItems: 1
+              maxItems: 12
+              description: NONE 不得与其他选项同时提交。
+              items: { type: string, enum: [BACK, KNEES, WRISTS, NONE] }
+            walkingFrequency: { type: string, enum: [ALMOST_DAILY, THREE_FOUR_WEEKLY, ONE_TWO_WEEKLY, MONTHLY] }
+            equipmentExperience: { type: string, enum: [LOVED, DID_NOT_WORK, NEVER] }
+            equipmentBarrier: { type: string, enum: [CHALLENGING, NO_EQUIPMENT, PRICE, UNCERTAIN, USAGE, BODYWEIGHT, OTHER] }
+            activityLevel: { type: string, enum: [SEDENTARY, LIGHT, MODERATE, HIGH] }
+    LifestyleStepRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedRevision, data]
+      properties:
+        expectedRevision: { type: integer, minimum: 0 }
+        data:
+          type: object
+          additionalProperties: false
+          minProperties: 1
+          properties:
+            workSchedule: { type: string, enum: [DAYTIME, NIGHT, FLEXIBLE, NOT_WORKING] }
+            typicalDay: { type: string, enum: [MOSTLY_SITTING, ACTIVE_BREAKS, ON_FEET] }
+            energyLevel: { type: string, enum: [LOW, AFTERNOON_SLUMP, BEFORE_MEALS, STEADY] }
+            waterIntake: { type: string, enum: [COFFEE_TEA, TWO_GLASSES, TWO_SIX, MORE_SIX] }
+            sleepDuration: { type: string, enum: [UNDER_FIVE, FIVE_SIX, SEVEN_EIGHT, OVER_EIGHT] }
+            weightGainEvents:
+              type: array
+              minItems: 1
+              maxItems: 12
+              description: NONE 不得与其他选项同时提交。
+              items: { type: string, enum: [RELATIONSHIP, BUSY, FINANCIAL, STRESS, AGING, SOCIAL, NONE] }
+    NutritionStepRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedRevision, data]
+      properties:
+        expectedRevision: { type: integer, minimum: 0 }
+        data:
+          type: object
+          additionalProperties: false
+          minProperties: 1
+          properties:
+            breakfastTime: { type: string, enum: [SIX_EIGHT, EIGHT_TEN, TEN_NOON, SKIP] }
+            lunchTime: { type: string, enum: [TEN_NOON, NOON_TWO, TWO_FOUR, SKIP] }
+            dinnerTime: { type: string, enum: [FOUR_SIX, SIX_EIGHT, EIGHT_TEN, SKIP] }
+            dietPreference: { type: string, enum: [TRADITIONAL, KETO, PALEO, VEGETARIAN, VEGAN, MEDITERRANEAN, PESCATARIAN, LACTOSE_FREE, GLUTEN_FREE] }
+            eatingHabits:
+              type: array
+              minItems: 1
+              maxItems: 12
+              description: NONE 不得与其他选项同时提交。
+              items: { type: string, enum: [LATE_NIGHT, SWEET, SODA, SALTY, NONE] }
+    MetricsStepRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedRevision, data]
+      properties:
+        expectedRevision: { type: integer, minimum: 0 }
+        data:
+          type: object
+          additionalProperties: false
+          minProperties: 1
+          properties:
+            heightCm: { type: number, minimum: 90, maximum: 242, multipleOf: 0.1 }
+            weightKg: { type: number, minimum: 25, maximum: 300, multipleOf: 0.1 }
+            targetWeightKg: { type: number, minimum: 25, maximum: 300, multipleOf: 0.1 }
+            age: { type: integer, minimum: 18, maximum: 80 }
+            sex: { type: string, enum: [MALE, FEMALE] }
+            importantEvent: { type: string, enum: [VACATION, WEDDING, HOLIDAY, SPORT, REUNION, BIRTHDAY, OTHER, NONE] }
+    WellnessProfile:
+      type: object
+      required: [secondaryGoals, dreamBody, flexibility, exerciseFrequency, targetZones, sensitivities, workSchedule, energyLevel, waterIntake, sleepDuration, dietPreference, eatingHabits]
+      properties:
+        secondaryGoals: { type: array, items: { type: string } }
+        dreamBody: { type: [string, "null"] }
+        flexibility: { type: [string, "null"] }
+        exerciseFrequency: { type: [string, "null"] }
+        targetZones: { type: array, items: { type: string } }
+        sensitivities: { type: array, items: { type: string } }
+        workSchedule: { type: [string, "null"] }
+        energyLevel: { type: [string, "null"] }
+        waterIntake: { type: [string, "null"] }
+        sleepDuration: { type: [string, "null"] }
+        dietPreference: { type: [string, "null"] }
+        eatingHabits: { type: array, items: { type: string } }
+    ReportSummary:
+      type: object
+      required: [bmi, goal]
+      properties:
+        bmi: { type: number }
+        goal: { type: string, enum: [LOSE_WEIGHT, MAINTAIN, GAIN_WEIGHT] }
+    PlanPreview:
+      type: object
+      required: [title, durationLabel, cadenceLabel, sessionLabel, equipmentLabel, highlights]
+      properties:
+        title: { type: string }
+        durationLabel: { type: string }
+        cadenceLabel: { type: string }
+        sessionLabel: { type: string }
+        equipmentLabel: { type: string }
+        highlights: { type: array, items: { type: string } }
+    PersonalPlan:
+      type: object
+      required: [title, subtitle, durationDays, cadence, weeklySchedule, phases, trainingPrinciples, recoveryActions, nutritionRhythm, personalization, safetyNotice]
+      properties:
+        title: { type: string }
+        subtitle: { type: string }
+        durationDays: { type: integer, enum: [28] }
+        cadence:
+          type: object
+          required: [workoutsPerWeek, sessionMinutes, walkDays, equipment, scheduleHint]
+          properties:
+            workoutsPerWeek: { type: integer, minimum: 3, maximum: 5 }
+            sessionMinutes: { type: string }
+            walkDays: { type: integer, minimum: 1, maximum: 5 }
+            equipment: { type: string }
+            scheduleHint: { type: string }
+        weeklySchedule:
+          type: array
+          minItems: 7
+          maxItems: 7
+          items:
+            type: object
+            required: [day, type, title, duration, detail]
+            properties:
+              day: { type: string }
+              type: { type: string, enum: [TRAIN, WALK, RECOVER] }
+              title: { type: string }
+              duration: { type: string }
+              detail: { type: string }
+        phases:
+          type: array
+          minItems: 3
+          maxItems: 3
+          items:
+            type: object
+            required: [period, title, detail]
+            properties:
+              period: { type: string }
+              title: { type: string }
+              detail: { type: string }
+        trainingPrinciples: { type: array, items: { type: string } }
+        recoveryActions: { type: array, items: { type: string } }
+        nutritionRhythm:
+          type: object
+          required: [pattern, mealTiming, actions]
+          properties:
+            pattern: { type: string }
+            mealTiming: { type: string }
+            actions: { type: array, items: { type: string } }
+        personalization: { type: array, items: { type: string } }
+        safetyNotice: { type: string }
+    PreviewReport:
+      type: object
+      required: [assessmentId, access, summary, wellnessProfile, planPreview, lockedFeatures, warnings, subscription, paymentAvailable, upgradeRequired, notice]
+      properties:
+        assessmentId: { type: string, format: uuid }
+        access: { const: PREVIEW }
+        summary: { $ref: "#/components/schemas/ReportSummary" }
+        wellnessProfile: { $ref: "#/components/schemas/WellnessProfile" }
+        planPreview: { $ref: "#/components/schemas/PlanPreview" }
+        lockedFeatures: { type: array, items: { type: string } }
+        warnings: { type: array, items: { type: object } }
+        subscription: { $ref: "#/components/schemas/Subscription" }
+        paymentAvailable: { type: boolean }
+        upgradeRequired: { type: boolean }
+        notice: { type: string }
+    FullReport:
+      type: object
+      required: [assessmentId, access, summary, wellnessProfile, planPreview, personalPlan, nutrition, prediction, subscription, algorithmVersion, warnings, paymentAvailable, upgradeRequired, notice]
+      properties:
+        assessmentId: { type: string, format: uuid }
+        access: { const: FULL }
+        summary: { $ref: "#/components/schemas/ReportSummary" }
+        wellnessProfile: { $ref: "#/components/schemas/WellnessProfile" }
+        planPreview: { $ref: "#/components/schemas/PlanPreview" }
+        personalPlan: { $ref: "#/components/schemas/PersonalPlan" }
+        nutrition:
+          type: object
+          required: [restingEnergyKcal, maintenanceKcal, suggestedIntakeKcal]
+          properties:
+            restingEnergyKcal: { type: integer }
+            maintenanceKcal: { type: integer }
+            suggestedIntakeKcal: { type: integer }
+        prediction:
+          type: object
+          required: [status, baseDate, targetDate, durationDays, weeklyChangeKg, curve]
+          properties:
+            status: { type: string, enum: [PROJECTED, AT_TARGET] }
+            baseDate: { type: string, format: date }
+            targetDate: { type: [string, "null"], format: date }
+            durationDays: { type: [integer, "null"] }
+            weeklyChangeKg: { type: number }
+            curve:
+              type: array
+              maxItems: 106
+              items:
+                type: object
+                required: [date, weightKg]
+                properties:
+                  date: { type: string, format: date }
+                  weightKg: { type: number }
+        subscription: { $ref: "#/components/schemas/Subscription" }
+        algorithmVersion: { type: string }
+        warnings: { type: array, items: { type: object } }
+        paymentAvailable: { const: false }
+        upgradeRequired: { const: false }
+        notice: { type: string }
