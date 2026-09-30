@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { createSessionToken, hashToken, type AuthContext } from "@/server/auth";
+import { retentionPolicy } from "@/server/config";
 import { db } from "@/server/db";
 import { sessionDto } from "@/server/presenters";
 
@@ -18,13 +19,14 @@ async function currentAssessment(client: Prisma.TransactionClient | typeof db, u
 }
 
 export async function createSession(now = new Date()) {
+  const retention = retentionPolicy();
   const userId = randomUUID();
   const sessionId = randomUUID();
   const assessmentId = randomUUID();
   const subscriptionId = randomUUID();
   const token = createSessionToken();
-  const expiresAt = new Date(now.getTime() + 7 * DAY_MS);
-  const purgeAfter = new Date(now.getTime() + 30 * DAY_MS);
+  const expiresAt = new Date(now.getTime() + retention.sessionDays * DAY_MS);
+  const purgeAfter = new Date(now.getTime() + retention.inactiveDays * DAY_MS);
   const data = await db.$transaction(async (tx) => {
     const user = await tx.user.create({ data: {
       id: userId,

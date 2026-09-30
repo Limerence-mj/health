@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { nextPurgeAfter } from "@/domain/subscription";
+import { retentionPolicy } from "@/server/config";
 import type { TransactionClient } from "@/server/idempotency";
 
 export async function lockUser(tx: TransactionClient, userId: string): Promise<void> {
@@ -10,6 +11,7 @@ export async function lockUser(tx: TransactionClient, userId: string): Promise<v
 }
 
 export async function touchPurgeAfter(tx: TransactionClient, userId: string, now: Date): Promise<Date> {
+  const retention = retentionPolicy();
   const [user, sessions, subscription] = await Promise.all([
     tx.user.findUniqueOrThrow({ where: { id: userId }, select: { purgeAfter: true } }),
     tx.session.findMany({ where: { userId, revokedAt: null }, select: { expiresAt: true } }),
@@ -20,6 +22,8 @@ export async function touchPurgeAfter(tx: TransactionClient, userId: string, now
     now,
     sessionExpiries: sessions.map((session) => session.expiresAt),
     subscriptionExpiry: subscription?.expiresAt ?? null,
+    inactiveDays: retention.inactiveDays,
+    subscriptionGraceDays: retention.postUnlockGraceDays,
   });
   if (purgeAfter > user.purgeAfter) await tx.user.update({ where: { id: userId }, data: { purgeAfter } });
   return purgeAfter;

@@ -3,10 +3,10 @@ info:
   title: WellPath 健康测评 API
   version: 0.3.0
   description: >-
-    匿名健康测评、结果权限和模拟支付接口。所有写请求必须同源且使用
+    匿名健康测评、结果权限和演示解锁接口。所有写请求必须同源且使用
     application/json；标注 Idempotency-Key 的操作支持业务回放。
 servers:
-  - url: http://127.0.0.1:3000
+  - url: http://127.0.0.1:3100
 tags:
   - name: Session
   - name: Assessment
@@ -203,8 +203,8 @@ paths:
   /pay:
     post:
       tags: [Payment]
-      summary: 处理模拟成功事件并激活 30 天权益
-      description: 不收款、不接收卡号；相同 eventId 不会重复激活或延长期限。
+      summary: 处理演示解锁事件并激活临时权益
+      description: 不展示金额、不收款、不接收卡号、不创建订单；相同 eventId 不会重复激活或延长期限。公开演示环境权益为 1 天，local/test 为 30 天。
       security: [{ cookieAuth: [] }, { bearerAuth: [] }]
       parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
       requestBody:
@@ -278,6 +278,17 @@ paths:
           headers:
             Set-Cookie: { schema: { type: string } }
         default: { $ref: "#/components/responses/Error" }
+  /api/maintenance/purge:
+    get:
+      tags: [Lifecycle]
+      summary: 清理已过保留期的匿名演示数据
+      description: 供每日调度任务调用；重复或并发调用不会重复删除固定合成数据。
+      security: [{ cronAuth: [] }]
+      responses:
+        "200": { description: 本批清理数量 }
+        "401": { description: 缺少或使用错误的维护凭证 }
+        "404": { description: 当前环境未启用自动清理入口 }
+        default: { $ref: "#/components/responses/Error" }
 components:
   securitySchemes:
     cookieAuth:
@@ -287,6 +298,10 @@ components:
     bearerAuth:
       type: http
       scheme: bearer
+    cronAuth:
+      type: http
+      scheme: bearer
+      description: Vercel Cron 使用 CRON_SECRET 自动设置 Authorization 头。
   parameters:
     AssessmentId:
       name: assessmentId

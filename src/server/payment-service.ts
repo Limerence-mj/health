@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { effectiveSubscriptionStatus, sessionExpiryForActivation } from "@/domain/subscription";
-import { env } from "@/server/config";
+import { env, retentionPolicy } from "@/server/config";
 import { db } from "@/server/db";
 import { AppError } from "@/server/errors";
 import { replayIfPresent, requestHash, saveReceipt } from "@/server/idempotency";
@@ -24,6 +24,7 @@ export async function activateMockPayment(input: {
   now?: Date;
 }) {
   if (!env().MOCK_PAYMENTS_ENABLED) throw new AppError(404, "FEATURE_DISABLED", "模拟支付未开启");
+  const retention = retentionPolicy();
   const now = input.now ?? new Date();
   const operation = "POST:/api/v1/payments/mock";
   const hash = requestHash(input.body);
@@ -68,14 +69,14 @@ export async function activateMockPayment(input: {
     }, now);
     if (effectiveStatus === "INVALID") throw new AppError(503, "TEMPORARILY_UNAVAILABLE", "权益状态暂时不可用");
     const startsAt = effectiveStatus === "ACTIVE" ? subscription.startsAt! : now;
-    const expiresAt = effectiveStatus === "ACTIVE" ? subscription.expiresAt! : new Date(now.getTime() + 30 * DAY_MS);
+    const expiresAt = effectiveStatus === "ACTIVE" ? subscription.expiresAt! : new Date(now.getTime() + retention.unlockDays * DAY_MS);
     const outcome = effectiveStatus === "ACTIVE" ? "ALREADY_ACTIVE" : "ACTIVATED";
     const savedSubscription = effectiveStatus === "ACTIVE" ? subscription : await tx.subscription.update({
       where: { id: subscription.id },
       data: { status: "ACTIVE", planCode: "DEMO_30D", startsAt, expiresAt, updatedAt: now },
     });
     const currentSession = await tx.session.findFirstOrThrow({ where: { id: input.sessionId, userId: input.userId } });
-    const nextSessionExpiry = sessionExpiryForActivation(currentSession.expiresAt, expiresAt);
+    const nextSessionExpiry = sessionExpiryForActivation(currentSession.expiresAt, expiresAt, retention.postUnlockGraceDays);
     const savedSession = nextSessionExpiry > currentSession.expiresAt
       ? await tx.session.update({ where: { id: currentSession.id }, data: { expiresAt: nextSessionExpiry } })
       : currentSession;

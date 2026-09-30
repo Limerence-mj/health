@@ -24,6 +24,7 @@ let accountService: typeof import("@/server/account-service");
 let configService: typeof import("@/server/config");
 let profileRoute: typeof import("@/app/api/v1/assessments/[id]/steps/[step]/route");
 let sessionsRoute: typeof import("@/app/api/v1/sessions/route");
+let maintenanceRoute: typeof import("@/app/api/maintenance/purge/route");
 let serverDb: typeof import("@/server/db").db;
 
 const now = new Date("2026-09-28T08:00:00.000Z");
@@ -58,6 +59,7 @@ beforeAll(async () => {
   configService = await import("@/server/config");
   profileRoute = await import("@/app/api/v1/assessments/[id]/steps/[step]/route");
   sessionsRoute = await import("@/app/api/v1/sessions/route");
+  maintenanceRoute = await import("@/app/api/maintenance/purge/route");
   serverDb = (await import("@/server/db")).db;
 });
 
@@ -479,6 +481,41 @@ describe("补充并发、边界与回滚证据", () => {
     await testDb.user.create({ data: { id: demoId, isDemo: true, purgeAfter: new Date(now.getTime() - 1), createdAt: new Date(now.getTime() - 2), updatedAt: now } });
     expect(await accountService.purgeExpiredAccount(demoId, now)).toBe(false);
     expect(await testDb.user.findUnique({ where: { id: demoId } })).not.toBeNull();
+  });
+
+  it("公开演示使用短期保留策略，且只有定时任务密钥可以清理到期访客", async () => {
+    const previousAppEnv = process.env.APP_ENV;
+    const previousCronSecret = process.env.CRON_SECRET;
+    process.env.APP_ENV = "demo";
+    process.env.CRON_SECRET = "integration-cleanup-secret";
+    configService.resetEnvForTests();
+    try {
+      const created = await sessionService.createSession(now);
+      const session = await testDb.session.findUniqueOrThrow({ where: { id: created.data.sessionId } });
+      const user = await testDb.user.findUniqueOrThrow({ where: { id: session.userId } });
+      expect(session.expiresAt.getTime()).toBe(now.getTime() + 86_400_000);
+      expect(user.purgeAfter.getTime()).toBe(now.getTime() + 7 * 86_400_000);
+
+      await testDb.user.update({ where: { id: user.id }, data: { purgeAfter: new Date(now.getTime() + 1) } });
+      const unauthorized = await maintenanceRoute.GET(new Request("http://127.0.0.1:3000/api/maintenance/purge", {
+        headers: { authorization: "Bearer invalid-maintenance-secret" },
+      }));
+      expect(unauthorized.status).toBe(401);
+      expect(await testDb.user.findUnique({ where: { id: user.id } })).not.toBeNull();
+
+      const authorized = await maintenanceRoute.GET(new Request("http://127.0.0.1:3000/api/maintenance/purge", {
+        headers: { authorization: "Bearer integration-cleanup-secret" },
+      }));
+      expect(authorized.status).toBe(200);
+      await expect(authorized.json()).resolves.toMatchObject({ data: { eligibleUsers: 1, deletedUsers: 1 } });
+      expect(await testDb.user.findUnique({ where: { id: user.id } })).toBeNull();
+    } finally {
+      if (previousAppEnv === undefined) delete process.env.APP_ENV;
+      else process.env.APP_ENV = previousAppEnv;
+      if (previousCronSecret === undefined) delete process.env.CRON_SECRET;
+      else process.env.CRON_SECRET = previousCronSecret;
+      configService.resetEnvForTests();
+    }
   });
 
   it("带复制来源自引用的同一用户测评仍可在一个事务中全部删除", async () => {

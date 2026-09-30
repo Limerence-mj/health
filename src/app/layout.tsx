@@ -6,7 +6,8 @@ import "@/app/globals.css";
 
 export const metadata: Metadata = {
   title: "WellPath 健康测评",
-  description: "基于目标、活动能力、生活习惯、饮食节律与身体数据的个性化健康测评",
+  description: "使用固定合成数据和虚构资料体验个性化健康测评流程",
+  robots: { index: false, follow: false },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
@@ -20,13 +21,13 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
               <span>WellPath</span>
             </Link>
             <nav aria-label="主导航">
-              <Link href="/demo">完整示例</Link>
+              <Link href="/demo">报告示例</Link>
               <Link href="/privacy">数据说明</Link>
             </nav>
           </header>
           <main>{children}</main>
           <footer className="site-footer">
-            <span>WellPath 产品原型 · 不构成医疗建议</span>
+            <span>WellPath 交互演示 · 请勿填写真实健康信息</span>
             <Link href="/privacy">隐私与删除</Link>
           </footer>
         </Providers>

@@ -18,8 +18,8 @@ export function effectiveSubscriptionStatus(subscription: StoredSubscription, no
   return now < subscription.expiresAt ? "ACTIVE" : "EXPIRED";
 }
 
-export function sessionExpiryForActivation(currentExpiry: Date, subscriptionExpiry: Date): Date {
-  const required = new Date(subscriptionExpiry.getTime() + 7 * DAY_MS);
+export function sessionExpiryForActivation(currentExpiry: Date, subscriptionExpiry: Date, graceDays = 7): Date {
+  const required = new Date(subscriptionExpiry.getTime() + graceDays * DAY_MS);
   return currentExpiry > required ? currentExpiry : required;
 }
 
@@ -28,9 +28,11 @@ export function nextPurgeAfter(input: {
   now: Date;
   sessionExpiries: Date[];
   subscriptionExpiry: Date | null;
+  inactiveDays?: number;
+  subscriptionGraceDays?: number;
 }): Date {
-  const candidates = [input.currentPurgeAfter.getTime(), input.now.getTime() + 30 * DAY_MS];
+  const candidates = [input.currentPurgeAfter.getTime(), input.now.getTime() + (input.inactiveDays ?? 30) * DAY_MS];
   for (const expiry of input.sessionExpiries) candidates.push(expiry.getTime());
-  if (input.subscriptionExpiry) candidates.push(input.subscriptionExpiry.getTime() + 7 * DAY_MS);
+  if (input.subscriptionExpiry) candidates.push(input.subscriptionExpiry.getTime() + (input.subscriptionGraceDays ?? 7) * DAY_MS);
   return new Date(Math.max(...candidates));
 }

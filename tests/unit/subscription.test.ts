@@ -16,6 +16,7 @@ describe("订阅与生命周期", () => {
     const subscriptionExpiry = new Date(+base + 30 * day);
     expect(sessionExpiryForActivation(new Date(+base + 7 * day), subscriptionExpiry)).toEqual(new Date(+base + 37 * day));
     expect(sessionExpiryForActivation(new Date(+base + 40 * day), subscriptionExpiry)).toEqual(new Date(+base + 40 * day));
+    expect(sessionExpiryForActivation(new Date(+base + day), subscriptionExpiry, 1)).toEqual(new Date(+base + 31 * day));
   });
 
   it("清理期限不早于会话、权益加七天和最后写入加三十天", () => {
@@ -25,5 +26,13 @@ describe("订阅与生命周期", () => {
       sessionExpiries: [new Date(+base + 40 * day)],
       subscriptionExpiry: new Date(+base + 30 * day),
     })).toEqual(new Date(+base + 40 * day));
+    expect(nextPurgeAfter({
+      currentPurgeAfter: base,
+      now: base,
+      sessionExpiries: [new Date(+base + day)],
+      subscriptionExpiry: null,
+      inactiveDays: 7,
+      subscriptionGraceDays: 1,
+    })).toEqual(new Date(+base + 7 * day));
   });
 });

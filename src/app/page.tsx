@@ -4,6 +4,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { DemoSafetyNotice } from "@/components/DemoSafetyNotice";
 import { api, jsonRequest } from "@/lib/api";
 
 type Session = { nextRoute: string | null; currentAssessmentId: string | null; subscription: { effectiveStatus: string } };
@@ -21,7 +22,8 @@ export default function HomePage() {
   const hasSession = session.isSuccess && session.data.currentAssessmentId;
   const nextRoute = session.data?.nextRoute ?? "/assessment/profile";
 
-  return (
+  return (<>
+    <DemoSafetyNotice />
     <section className="hero">
       <div>
         <p className="eyebrow">从了解自己开始</p>
@@ -37,13 +39,13 @@ export default function HomePage() {
             <Link className="button button-primary" href={nextRoute}>继续我的测评 <span aria-hidden="true">→</span></Link>
           ) : (
             <button type="button" className="button button-primary" disabled={start.isPending} onClick={() => start.mutate()}>
-              {start.isPending ? "正在创建…" : "开始免费测评"} <span aria-hidden="true">→</span>
+              {start.isPending ? "正在创建…" : "体验测评流程"} <span aria-hidden="true">→</span>
             </button>
           )}
           <Link className="button button-secondary" href="/demo">先看完整示例</Link>
         </div>
         {start.isError && <p className="form-error" role="alert">{start.error.message}</p>}
-        <p className="fine-print">匿名使用 · 无需手机号 · 可随时删除全部数据 · 不构成医疗建议</p>
+        <p className="fine-print">无需手机号 · 请使用虚构资料 · 可随时删除本次演示数据</p>
       </div>
       <div className="hero-art hero-photo">
         <Image src="/images/wellness/hero-pilates-v2.png" alt="在阳光充足的家中进行温和 Pilates 拉伸" fill priority sizes="(max-width: 760px) 100vw, 46vw" />
@@ -52,5 +54,5 @@ export default function HomePage() {
         <div className="mini-card two">按自己的节奏填写</div>
       </div>
     </section>
-  );
+  </>);
 }

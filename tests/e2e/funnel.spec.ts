@@ -29,7 +29,7 @@ async function fillNumber(page: Page, label: string, value: string, nextTitle: s
 async function startAssessment(page: Page) {
   await page.goto("/");
   await expect(page.getByText(/34 个个性化问题|回答组成画像|真实目标范围/)).toHaveCount(0);
-  await page.getByRole("button", { name: /开始免费测评/ }).click();
+  await page.getByRole("button", { name: /体验测评流程/ }).click();
   await expect(page).toHaveURL(/\/assessment\/profile$/);
   await expectQuestion(page, "开始前确认数据使用范围");
 }
@@ -105,7 +105,7 @@ async function fillCompleteAssessment(page: Page) {
   await expect(page).toHaveURL(/\/results\/[0-9a-f-]+$/);
 }
 
-test("34 项五阶段测评、刷新恢复、宽范围体重与模拟解锁形成完整闭环", async ({ page }) => {
+test("34 项五阶段测评、刷新恢复、宽范围体重与演示解锁形成完整闭环", async ({ page }) => {
   await fillCompleteAssessment(page);
   await expect(page.getByRole("heading", { name: "你的基础结果已就绪" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "你的生活方式概览" })).toBeVisible();
@@ -118,17 +118,17 @@ test("34 项五阶段测评、刷新恢复、宽范围体重与模拟解锁形�
   expect(previewPayload.data).not.toHaveProperty("prediction");
   expect(previewPayload.data).not.toHaveProperty("personalPlan");
   expect(previewPayload.data.planPreview).toMatchObject({ durationLabel: "28 天", cadenceLabel: "每周 4 次主训练" });
-  await page.getByRole("button", { name: "模拟解锁完整报告" }).click();
+  await page.getByRole("button", { name: "演示解锁完整报告" }).click();
   await expect(page.getByRole("dialog")).toContainText("不会扣款");
   const cancelPayment = page.getByRole("button", { name: "取消" });
   await expect(cancelPayment).toBeFocused();
   await page.keyboard.press("Shift+Tab");
-  await expect(page.getByRole("button", { name: "确认模拟成功" })).toBeFocused();
+  await expect(page.getByRole("button", { name: "确认演示解锁" })).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toBeHidden();
-  await expect(page.getByRole("button", { name: "模拟解锁完整报告" })).toBeFocused();
-  await page.getByRole("button", { name: "模拟解锁完整报告" }).click();
-  await page.getByRole("button", { name: "确认模拟成功" }).click();
+  await expect(page.getByRole("button", { name: "演示解锁完整报告" })).toBeFocused();
+  await page.getByRole("button", { name: "演示解锁完整报告" }).click();
+  await page.getByRole("button", { name: "确认演示解锁" }).click();
   await expect(page.getByRole("heading", { name: "完整报告已解锁" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "28 天分为三个阶段" })).toBeVisible();
   await expect(page.getByText("第一周节奏样例")).toBeVisible();
@@ -145,7 +145,7 @@ test("公开合成示例可切换预览/完整视图且不覆盖个人 Cookie", 
   const before = (await context.cookies()).find((cookie) => cookie.name === "health_session")?.value;
   expect(before).toBeTruthy();
   await page.goto("/demo");
-  await expect(page.getByText(/示例内容仅用于了解报告结构/)).toBeVisible();
+  await expect(page.getByText(/固定合成数据/)).toBeVisible();
   await expect(page.getByText("每日能量情景")).toBeVisible();
   await page.getByRole("button", { name: "基础结果" }).click();
   await expect(page.getByText("解锁训练、恢复与饮食行动")).toBeVisible();
@@ -206,7 +206,7 @@ test("模拟支付响应丢失后通过读取权益恢复，不创建第二次�
     await route.fetch();
     await route.abort("failed");
   }, { times: 1 });
-  await page.getByRole("button", { name: "模拟解锁完整报告" }).click();
-  await page.getByRole("button", { name: "确认模拟成功" }).click();
+  await page.getByRole("button", { name: "演示解锁完整报告" }).click();
+  await page.getByRole("button", { name: "确认演示解锁" }).click();
   await expect(page.getByRole("heading", { name: "完整报告已解锁" })).toBeVisible();
 });

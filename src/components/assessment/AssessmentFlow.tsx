@@ -9,6 +9,7 @@ import { HEALTH_CONSENT_VERSION, MODEL_SCOPE_VERSION, STEPS, type StepKey } from
 import { hasAnswer, type QuestionnaireAnswers, type StageAnswers } from "@/contracts/questionnaire";
 import { api, jsonRequest } from "@/lib/api";
 import { STAGE_META, STAGE_SCREENS, TOTAL_QUESTION_COUNT, type QuestionScreen } from "@/components/assessment/questionnaire-config";
+import { DemoSafetyNotice } from "@/components/DemoSafetyNotice";
 
 type Assessment = {
   assessmentId: string;
@@ -210,6 +211,7 @@ export function AssessmentFlow({ step }: { step: StepKey }) {
 
   return (
     <div className="quiz-shell">
+      <DemoSafetyNotice compact />
       <div className="quiz-progress" aria-label={`总进度 ${progressPercent}%`}>
         <div className="quiz-progress-meta"><span>{meta.label}</span><span>{progressPercent}%</span></div>
         <div className="progress-track"><div className="progress-fill" style={{ width: `${progressPercent}%` }} /></div>
@@ -261,7 +263,7 @@ export function AssessmentFlow({ step }: { step: StepKey }) {
           </div>}
 
           {screen.kind === "consent" && <div className="check-list consent-list">
-            <label className="check-row"><input type="checkbox" checked={activeDraft.healthDataConsent === true} onChange={(event) => { setScreenIndex(activeIndex); setDraft({ ...activeDraft, healthDataConsent: event.target.checked }); setDirty(true); }} /><span><strong>健康数据处理授权</strong><br />我同意系统保存本次问卷与身体数据，用于生成个人报告；我可以随时在数据说明页删除。</span></label>
+            <label className="check-row"><input type="checkbox" checked={activeDraft.healthDataConsent === true} onChange={(event) => { setScreenIndex(activeIndex); setDraft({ ...activeDraft, healthDataConsent: event.target.checked }); setDirty(true); }} /><span><strong>演示数据处理确认</strong><br />我确认只填写虚构资料，并同意系统临时保存本次选择以生成演示报告；可随时在数据说明页删除。</span></label>
             <label className="check-row"><input type="checkbox" checked={activeDraft.modelScopeConfirmed === true} onChange={(event) => { setScreenIndex(activeIndex); setDraft({ ...activeDraft, modelScopeConfirmed: event.target.checked }); setDirty(true); }} /><span><strong>理解适用范围</strong><br />这是一般成年人自助健康情景，不适用于孕哺期、临床治疗或紧急健康决策。</span></label>
           </div>}
 
