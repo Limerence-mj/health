@@ -28,7 +28,9 @@ jobs:
       APP_ORIGIN: http://127.0.0.1:3100
       APP_ENV: test
       MOCK_PAYMENTS_ENABLED: "true"
-      DEMO_MODE: "false"
+      DEMO_MODE: "true"
+      DEMO_PAID_SESSION_ID: 00000000-0000-4000-8000-000000000010
+      DEMO_PAID_ASSESSMENT_ID: 00000000-0000-4000-8000-000000000020
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
